@@ -1,0 +1,20 @@
+services:
+  node: 
+
+
+    build:
+      context: .
+      dockerfile: Dockerfile.node
+
+    env_file:
+      - .env
+    environment:
+      - PORT=${PORT}
+    ports:
+      - ${PORT}:${PORT}
+    volumes:
+      - ./db:/run/db
+    
+
+
+    
