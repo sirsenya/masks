@@ -63,7 +63,8 @@ describe("should return false or correct result", () => {
       ],
       mismatches: 0,
     });
-    test(` 4
+  });
+  test(` 4
     {
         store: [
           { size: 1, quantity: 1 },
@@ -80,34 +81,33 @@ describe("should return false or correct result", () => {
         mismatches: 1,
       }
     `, () => {
-      expect(
-        process(
-          [
-            { size: 1, quantity: 1 },
-            { size: 2, quantity: 2 },
-            { size: 3, quantity: 1 },
-          ],
-          [
-            { id: 100, size: [1] },
-            { id: 101, size: [2] },
-            { id: 102, size: [2, 3], masterSize: "s1" },
-            { id: 103, size: [1, 2], masterSize: "s2" },
-          ]
-        )
-      ).toStrictEqual<Result>({
-        stats: [
+    expect(
+      process(
+        [
           { size: 1, quantity: 1 },
           { size: 2, quantity: 2 },
           { size: 3, quantity: 1 },
         ],
-        assignment: [
-          { id: 100, size: 1 },
-          { id: 101, size: 2 },
-          { id: 102, size: 2 || 3 },
-          { id: 103, size: 1 || 2 },
-        ],
-        mismatches: 1,
-      });
+        [
+          { id: 100, size: [1] },
+          { id: 101, size: [2] },
+          { id: 102, size: [2, 3], masterSize: "s1" },
+          { id: 103, size: [1, 2], masterSize: "s2" },
+        ]
+      )
+    ).toStrictEqual<Result>({
+      stats: [
+        { size: 1, quantity: 1 },
+        { size: 2, quantity: 2 },
+        { size: 3, quantity: 1 },
+      ],
+      assignment: [
+        { id: 100, size: 1 },
+        { id: 101, size: 2 },
+        { id: 102, size: 2 || 3 },
+        { id: 103, size: 1 || 2 },
+      ],
+      mismatches: 1,
     });
   });
 });

@@ -1,22 +1,9 @@
-// Необходимо написать функцию process, которая первым аргументом принимает sore: Store, вторым - order: Order
-// и возвращает:
-// - false, если склад не сможет обработать данный заказ (например, на складе нет подходящих размеров);
-// - объект Result, если заказ можно обработать, выдав всем подходящий размер.
-// ```ts
-// type Result = {
-//   stats: Array<{ size: number, quantity: number }>
-//   assignment: Array<{ id: number, size: number }>
-//   mismatches: number
-// }
-
 import { type Result, type Order, type Store } from "./types";
 
 type Masks = {
   size: number;
   quantity: number;
 };
-
-type Assignment = {};
 
 export const process = (store: Store, order: Order): false | Result => {
   const optionalOrders: Order = [];
@@ -27,42 +14,49 @@ export const process = (store: Store, order: Order): false | Result => {
     mismatches: 0,
   };
 
-  //////sort orders by type
-  for (let currentOrder of order) {
-    if (Object.keys(currentOrder).includes("masterSize")) {
-      optionalOrders.push(currentOrder);
-    } else {
-      strictOrders.push(currentOrder);
-    }
-  }
-
-  //////manage strict orders
-  for (let currentStrictOrder of strictOrders) {
-    const currentStrictOrderSize = currentStrictOrder.size[0];
-    const masksOfNeededSize: Masks | undefined = store.find(
-      (masks) => masks.size === currentStrictOrderSize && masks.quantity > 0
-    );
-    //////can't resolve this entire order
-    if (!masksOfNeededSize) {
-      return false;
-    }
-
-    /////took some masks from the store
-    masksOfNeededSize.quantity--;
-
+  const amendResult = (masksOfNeededSize: Masks, id: number, size: number) => {
     /////add new stats to result or push quantity in the existing one
     const stats: Masks | undefined = result.stats.find(
-      (stat) => stat.size === currentStrictOrderSize
+      (stat) => stat.size === size
     );
-    stats
-      ? stats.quantity++
-      : result.stats.push({ size: currentStrictOrderSize, quantity: 1 });
+    stats ? stats.quantity++ : result.stats.push({ size: size, quantity: 1 });
+
+    /////take some masks from the store
+    masksOfNeededSize.quantity--;
 
     /////add new assignment to the result
     result.assignment.push({
-      id: currentStrictOrder.id,
-      size: currentStrictOrderSize,
+      id: id,
+      size: size,
     });
+  };
+  const optinalSizesNeeded: number[][] = [];
+
+  //////sort orders by type
+  for (let currentOrder of order) {
+    if (Object.keys(currentOrder).includes("masterSize")) {
+      const optionalOrderSizes: number[] = currentOrder.size;
+      const masterSize: "s1" | "s2" = new Map(Object.entries(currentOrder)).get(
+        "masterSize"
+      );
+      const prioritySize: number =
+        optionalOrderSizes[Number(masterSize.substring(1)) - 1];
+      const secondarySize: number = optionalOrderSizes.find(
+        (size) => size != prioritySize
+      )!;
+      optionalOrders.push(currentOrder);
+      optinalSizesNeeded.push([prioritySize, secondarySize]);
+    } else {
+      const currentStrictOrderSize = currentOrder.size[0];
+      const masksOfNeededSize: Masks | undefined = store.find(
+        (masks) => masks.size === currentStrictOrderSize && masks.quantity > 0
+      );
+      //////can't resolve this entire order
+      if (!masksOfNeededSize) {
+        return false;
+      }
+      amendResult(masksOfNeededSize, currentOrder.id, currentStrictOrderSize);
+    }
   }
 
   for (let currentOptionalOrder of optionalOrders) {
@@ -75,48 +69,31 @@ export const process = (store: Store, order: Order): false | Result => {
     const secondarySize: number = optionalOrderSizes.find(
       (size) => size != prioritySize
     )!;
+
+    const masksOfPrioritySize: Masks | undefined = store.find(
+      (masks) => masks.size === prioritySize && masks.quantity > 0
+    );
+
+    /////if no priority size - look for secondary size
+    if (!masksOfPrioritySize) {
+      const masksOfSecondarySize: Masks | undefined = store.find(
+        (masks) => masks.size === secondarySize && masks.quantity > 0
+      );
+      /////if neither priority nor secondary size - can't resolve the entire order
+      if (!masksOfSecondarySize) {
+        return false;
+      }
+      /////if only secondary size is available
+
+      /////increment mismatches
+      result.mismatches++;
+      amendResult(masksOfSecondarySize, currentOptionalOrder.id, secondarySize);
+      break;
+    }
+    //// if priority size is available
+    amendResult(masksOfPrioritySize, currentOptionalOrder.id, prioritySize);
   }
-
-  return false;
+  ////stats should be sorted by sizes in ascending order
+  result.stats.sort((a, b) => a.size - b.size);
+  return result;
 };
-
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-const tests = [
-  {
-    store: [{ size: 2, quantity: 1 }],
-    order: [{ id: 102, size: [1, 2], masterSize: "s1" }],
-    isPossible: true,
-    mismatches: 1,
-  },
-  {
-    store: [{ size: 3, quantity: 1 }],
-    order: [{ id: 102, size: [1, 2], masterSize: "s1" }],
-    isPossible: false,
-    mismatches: 0,
-  },
-  {
-    store: [{ size: 2, quantity: 4 }],
-    order: [
-      { id: 101, size: [2] },
-      { id: 102, size: [1, 2], masterSize: "s2" },
-    ],
-    isPossible: true,
-    mismatches: 0,
-  },
-  {
-    store: [
-      { size: 1, quantity: 1 },
-      { size: 2, quantity: 2 },
-      { size: 3, quantity: 1 },
-    ],
-    order: [
-      { id: 100, size: [1] },
-      { id: 101, size: [2] },
-      { id: 102, size: [2, 3], masterSize: "s1" },
-      { id: 103, size: [1, 2], masterSize: "s2" },
-    ],
-    isPossible: true,
-    mismatches: 1,
-  },
-];
