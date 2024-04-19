@@ -5,8 +5,6 @@ type Masks = {
   quantity: number;
 };
 
-type StrictOrder = { id: number; size: [number] };
-
 type OptionalOrder = {
   id: number;
   size: [number, number];
@@ -14,7 +12,7 @@ type OptionalOrder = {
 };
 
 export const process = (store: Store, order: Order): false | Result => {
-  const optionalOrders: Order = [];
+  const optionalOrders: OptionalOrder[] = [];
   const result: Result = {
     stats: [],
     assignment: [],
@@ -24,35 +22,40 @@ export const process = (store: Store, order: Order): false | Result => {
   const findMaskOfNeededSize = (size: number): Masks | undefined =>
     store.find((masks) => masks.size === size && masks.quantity > 0);
 
-  const amendResult = (masksOfNeededSize: Masks, id: number, size: number) => {
+  const amendResult = (
+    masksOfNeededSize: Masks,
+    id: number,
+    size: number
+  ): void => {
     /////add new stats to result or push quantity in the existing one
     const stats: Masks | undefined = result.stats.find(
       (stat) => stat.size === size
     );
     stats ? stats.quantity++ : result.stats.push({ size: size, quantity: 1 });
-
+    if (id === 102) {
+      console.log(102!!!!!!);
+    }
     /////take some masks from the store
-    masksOfNeededSize.quantity--;
-
+    decrementQuantity(masksOfNeededSize);
+    //masksOfNeededSize.quantity--;
+    if (id === 102) {
+    }
     /////add new assignment to the result
     result.assignment.push({
       id: id,
       size: size,
     });
   };
-  const optionalSizesNeeded: number[][] = [];
 
-  const processAsStrictOrder = (id: number, size: number) => {
+  const processAsStrictOrder = (id: number, size: number): void => {
     /////if a strict order - process it right away
-    const currentStrictOrderSize = size;
-    const masksOfNeededSize: Masks | undefined = findMaskOfNeededSize(
-      currentStrictOrderSize
-    );
+
+    const masksOfNeededSize: Masks | undefined = findMaskOfNeededSize(size);
     //////can't resolve this entire order
     if (!masksOfNeededSize) {
       throw false;
     }
-    amendResult(masksOfNeededSize, id, currentStrictOrderSize);
+    amendResult(masksOfNeededSize, id, size);
   };
 
   ///TODO: function for decrementing quantity in stock
@@ -60,30 +63,77 @@ export const process = (store: Store, order: Order): false | Result => {
   /// orders that have this size as primary or secondary and process
   ///these optionalOrders as strict orders rigth away
 
-  const preCheckOptionalOrder = (
-    prioritySize: number,
-    secondarySize: number,
-    currentOrder: OptionalOrder
-  ): void | false => {
+  const decrementQuantity = (masks: Masks): void => {
+    if (masks.quantity <= 0) {
+      throw new Error(
+        "someHow 0 or less qunatity masks are passed to the decrementQuantity"
+      );
+      //  throw false
+    }
+    masks.quantity--;
+
+    /// find optional orders with a size that've
+    /// just become 0 and process it as Strict order with its other
+    /// size that became is the only available size now
+    if (masks.quantity === 0) {
+      const ordersOutOfSize: OptionalOrder[] = optionalOrders.filter((order) =>
+        order.size.find((size) => {
+          return size === masks.size;
+        })
+      );
+
+      if (ordersOutOfSize.length > 0) {
+        ordersOutOfSize.forEach((optionalOrder) => {
+          const availableSize: number | undefined = optionalOrder.size.find(
+            (size) => size != masks.size
+          );
+          if (!availableSize) {
+            throw new Error("one of the sizes of optionalOrder doesn't exist");
+          }
+
+          ///TODO: optimize index - can find it at the beggining in the filter
+          if (getPrioritySize(optionalOrder) != availableSize) {
+            result.mismatches++;
+          }
+          optionalOrders.splice(
+            optionalOrders.findIndex((order) => optionalOrder.id === order.id)
+          );
+          ///delete processed as strict orders from optional orders arrays
+
+          processAsStrictOrder(optionalOrder.id, availableSize);
+        });
+      }
+    }
+  };
+
+  const preCheckOptionalOrder = (optionalOrder: OptionalOrder): void => {
+    const prioritySize = getPrioritySize(optionalOrder);
+    const secondarySize = getSecondarySize(optionalOrder);
     const prioritySizeInStore = findMaskOfNeededSize(prioritySize);
     const secondarySizeInStore = findMaskOfNeededSize(secondarySize);
-    // console.log(
-    //   "currentOrder.masterSize!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
-    // );
-    // console.log(currentOrder.masterSize);
-    console.log(prioritySizeInStore);
-    console.log(secondarySize);
     if (!prioritySizeInStore && !secondarySizeInStore) {
       throw false;
     } else if (prioritySizeInStore && !secondarySizeInStore) {
-      processAsStrictOrder(currentOrder.id, prioritySize);
+      processAsStrictOrder(optionalOrder.id, prioritySize);
     } else if (secondarySizeInStore && !prioritySizeInStore) {
       result.mismatches++;
-      processAsStrictOrder(currentOrder.id, secondarySize);
+      processAsStrictOrder(optionalOrder.id, secondarySize);
     } else {
-      optionalOrders.push(currentOrder);
-      optionalSizesNeeded.push([prioritySize, secondarySize]);
+      optionalOrders.push(optionalOrder);
     }
+  };
+  const getPrioritySize = (optionalOrder: OptionalOrder): number => {
+    const masterSize: "s1" | "s2" = optionalOrder.masterSize;
+    const prioritySize: number =
+      optionalOrder.size[Number(masterSize.substring(1)) - 1];
+    return prioritySize;
+  };
+
+  const getSecondarySize = (optionalOrder: OptionalOrder) => {
+    const secondarySize: number = optionalOrder.size.find(
+      (size) => size != getPrioritySize(optionalOrder)
+    )!;
+    return secondarySize;
   };
 
   try {
@@ -91,19 +141,8 @@ export const process = (store: Store, order: Order): false | Result => {
     for (let currentOrder of order) {
       /////if is order with mastersize
       if (Object.keys(currentOrder).includes("masterSize")) {
-        ////TODO: add pre-check if already there are no sizes available for this optional order
-        ////or if already only one size is available make it strictOrder.
-        ////this check should be repeated after this whole itiration, since the situation might have changed
         const optionalOrder: OptionalOrder = currentOrder as OptionalOrder;
-        const optionalOrderSizes: number[] = optionalOrder.size;
-        const masterSize: "s1" | "s2" = optionalOrder.masterSize;
-        const prioritySize: number =
-          optionalOrderSizes[Number(masterSize.substring(1)) - 1];
-        const secondarySize: number = optionalOrderSizes.find(
-          (size) => size != prioritySize
-        )!;
-
-        preCheckOptionalOrder(prioritySize, secondarySize, optionalOrder);
+        preCheckOptionalOrder(optionalOrder);
       } else {
         /////If strict order
         processAsStrictOrder(currentOrder.id, currentOrder.size[0]);
@@ -119,47 +158,31 @@ export const process = (store: Store, order: Order): false | Result => {
     // {prioritySize: number, neededQuantity: number}
     //Б. Посмотреть
 
-    const prioritySizes = optionalSizesNeeded.map((e) => e[0]);
-    const secondarySizes = optionalSizesNeeded.map((e) => e[1]);
-    console.log(store);
-    console.log(optionalSizesNeeded);
+    const optionalSizesNeeded: number[][] = optionalOrders.map(
+      (order) => order.size
+    );
+    const prioritySizesNeeded = optionalSizesNeeded.map((e) => e[0]);
+    const secondarySizesNeeded = optionalSizesNeeded.map((e) => e[1]);
+    // console.log(store);
+    // console.log(optionalSizesNeeded);
+
+    //  const conflictOfInterest = [];
+    //  optionalSizesNeeded.forEach(sizeNeeded =>)
 
     //////////////////////////////////////////////////////////////////////////////////////////////////////
-    for (let currentOptionalOrder of optionalOrders) {
-      const optionalOrderSizes: number[] = currentOptionalOrder.size;
-      const masterSize: "s1" | "s2" = new Map(
-        Object.entries(currentOptionalOrder)
-      ).get("masterSize");
-      const prioritySize: number =
-        optionalOrderSizes[Number(masterSize.substring(1)) - 1];
-      const secondarySize: number = optionalOrderSizes.find(
-        (size) => size != prioritySize
-      )!;
-
+    for (let optionalOrder of optionalOrders) {
+      const prioritySize = getPrioritySize(optionalOrder);
+      const secondarySize = getSecondarySize(optionalOrder);
       const masksOfPrioritySize: Masks | undefined =
         findMaskOfNeededSize(prioritySize);
-
       /////if no priority size - look for secondary size
       if (!masksOfPrioritySize) {
-        const masksOfSecondarySize: Masks | undefined =
-          findMaskOfNeededSize(secondarySize);
-        /////if neither priority nor secondary size - can't resolve the entire order
-        if (!masksOfSecondarySize) {
-          return false;
-        }
-        /////if only secondary size is available
-
-        /////increment mismatches
         result.mismatches++;
-        amendResult(
-          masksOfSecondarySize,
-          currentOptionalOrder.id,
-          secondarySize
-        );
+        processAsStrictOrder(optionalOrder.id, secondarySize);
         break;
       }
       //// if priority size is available
-      amendResult(masksOfPrioritySize, currentOptionalOrder.id, prioritySize);
+      amendResult(masksOfPrioritySize, optionalOrder.id, prioritySize);
     }
   } catch (e) {
     if (e === false) {
@@ -170,6 +193,6 @@ export const process = (store: Store, order: Order): false | Result => {
   }
   ////stats should be sorted by sizes in ascending order
   result.stats.sort((a, b) => a.size - b.size);
-
+  console.log(result);
   return result;
 };

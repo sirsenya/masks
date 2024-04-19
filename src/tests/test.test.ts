@@ -81,6 +81,37 @@ describe("should return false or correct result", () => {
         mismatches: 1,
       }
     `, () => {
+    const result: Result | false = process(
+      [
+        { size: 1, quantity: 1 },
+        { size: 2, quantity: 2 },
+        { size: 3, quantity: 1 },
+      ],
+      [
+        { id: 100, size: [1] },
+        { id: 101, size: [2] },
+        { id: 102, size: [2, 3], masterSize: "s1" },
+        { id: 103, size: [1, 2], masterSize: "s2" },
+      ]
+    );
+
+    if (result === false) throw Error;
+    expect(result.mismatches).toEqual(1);
+    expect(result.assignment).toEqual(
+      expect.arrayContaining([
+        { id: 100, size: 1 },
+        { id: 101, size: 2 },
+        { id: 103, size: 2 },
+        { id: 102, size: 3 },
+      ])
+    );
+    expect(result.stats).toEqual(
+      expect.arrayContaining([
+        { size: 1, quantity: 1 },
+        { size: 2, quantity: 2 },
+        { size: 3, quantity: 1 },
+      ])
+    );
     expect(
       process(
         [
@@ -95,7 +126,7 @@ describe("should return false or correct result", () => {
           { id: 103, size: [1, 2], masterSize: "s2" },
         ]
       )
-    ).toStrictEqual<Result>({
+    ).toEqual<Result>({
       stats: [
         { size: 1, quantity: 1 },
         { size: 2, quantity: 2 },
@@ -104,8 +135,8 @@ describe("should return false or correct result", () => {
       assignment: [
         { id: 100, size: 1 },
         { id: 101, size: 2 },
-        { id: 102, size: 2 || 3 },
-        { id: 103, size: 1 || 2 },
+        { id: 102, size: 3 },
+        { id: 103, size: 2 },
       ],
       mismatches: 1,
     });

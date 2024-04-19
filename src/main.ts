@@ -2,8 +2,17 @@ import { process } from "./process";
 import { type Order } from "./types";
 
 process(
-  [{ size: 2, quantity: 1 }],
-  [{ id: 102, size: [1, 2], masterSize: "s1" }]
+  [
+    { size: 1, quantity: 1 },
+    { size: 2, quantity: 2 },
+    { size: 3, quantity: 1 },
+  ],
+  [
+    { id: 100, size: [1] },
+    { id: 101, size: [2] },
+    { id: 102, size: [2, 3], masterSize: "s1" },
+    { id: 103, size: [1, 2], masterSize: "s2" },
+  ]
 );
 
 const tests = [
