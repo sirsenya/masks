@@ -22,88 +22,76 @@ export const process = (store: Store, order: Order): false | Result => {
   const findMaskOfNeededSize = (size: number): Masks | undefined =>
     store.find((masks) => masks.size === size && masks.quantity > 0);
 
-  const amendResult = (
-    masksOfNeededSize: Masks,
-    id: number,
-    size: number
-  ): void => {
-    /////add new stats to result or push quantity in the existing one
-    const stats: Masks | undefined = result.stats.find(
-      (stat) => stat.size === size
-    );
-    stats ? stats.quantity++ : result.stats.push({ size: size, quantity: 1 });
-    if (id === 102) {
-      console.log(102!!!!!!);
-    }
-    /////take some masks from the store
-    decrementQuantity(masksOfNeededSize);
-    //masksOfNeededSize.quantity--;
-    if (id === 102) {
-    }
-    /////add new assignment to the result
-    result.assignment.push({
-      id: id,
-      size: size,
-    });
-  };
-
   const processAsStrictOrder = (id: number, size: number): void => {
     /////if a strict order - process it right away
 
     const masksOfNeededSize: Masks | undefined = findMaskOfNeededSize(size);
     //////can't resolve this entire order
+
     if (!masksOfNeededSize) {
+      console.log("in false");
+
       throw false;
     }
-    amendResult(masksOfNeededSize, id, size);
-  };
 
-  ///TODO: function for decrementing quantity in stock
-  ///after decrementing, if it decremented to zero it should check the array of optional orders for
-  /// orders that have this size as primary or secondary and process
-  ///these optionalOrders as strict orders rigth away
-
-  const decrementQuantity = (masks: Masks): void => {
-    if (masks.quantity <= 0) {
-      throw new Error(
-        "someHow 0 or less qunatity masks are passed to the decrementQuantity"
-      );
-      //  throw false
-    }
-    masks.quantity--;
-
-    /// find optional orders with a size that've
-    /// just become 0 and process it as Strict order with its other
-    /// size that became is the only available size now
-    if (masks.quantity === 0) {
-      const ordersOutOfSize: OptionalOrder[] = optionalOrders.filter((order) =>
-        order.size.find((size) => {
-          return size === masks.size;
-        })
-      );
-
-      if (ordersOutOfSize.length > 0) {
-        ordersOutOfSize.forEach((optionalOrder) => {
-          const availableSize: number | undefined = optionalOrder.size.find(
-            (size) => size != masks.size
-          );
-          if (!availableSize) {
-            throw new Error("one of the sizes of optionalOrder doesn't exist");
-          }
-
-          ///TODO: optimize index - can find it at the beggining in the filter
-          if (getPrioritySize(optionalOrder) != availableSize) {
-            result.mismatches++;
-          }
-          optionalOrders.splice(
-            optionalOrders.findIndex((order) => optionalOrder.id === order.id)
-          );
-          ///delete processed as strict orders from optional orders arrays
-
-          processAsStrictOrder(optionalOrder.id, availableSize);
-        });
+    const decrementQuantity = (masks: Masks): void => {
+      if (masks.quantity <= 0) {
+        throw new Error(
+          "someHow 0 or less qunatity masks are passed to the decrementQuantity"
+        );
+        //  throw false
       }
-    }
+      masks.quantity--;
+
+      /// find optional orders with a size that've
+      /// just become 0 and process it as Strict order with its other
+      /// size that became is the only available size now
+      if (masks.quantity === 0) {
+        ///find optional order with any size that became out of stock
+        const ordersOutOfSize: OptionalOrder[] = optionalOrders.filter(
+          (order) =>
+            order.size.find((size) => {
+              return size === masks.size;
+            })
+        );
+
+        if (ordersOutOfSize.length > 0) {
+          ordersOutOfSize.forEach((optionalOrder) => {
+            const availableSize: number | undefined = optionalOrder.size.find(
+              (size) => size != masks.size
+            );
+            const id = optionalOrder.id;
+            if (!availableSize) {
+              throw new Error(
+                "one of the sizes of optionalOrder doesn't exist"
+              );
+            }
+
+            ///TODO: optimize index - can find it at the beggining in the filter
+            if (getPrioritySize(optionalOrder) != availableSize) {
+              result.mismatches++;
+            }
+            deleteOptionalOrderFrom(optionalOrders, id);
+            ///delete processed as strict orders from optional orders arrays
+            processAsStrictOrder(id, availableSize);
+          });
+        }
+      }
+    };
+    /////add new stats to result or push quantity in the existing one
+    const stats: Masks | undefined = result.stats.find(
+      (stat) => stat.size === size
+    );
+    stats ? stats.quantity++ : result.stats.push({ size: size, quantity: 1 });
+
+    /////take some masks from the store
+    decrementQuantity(masksOfNeededSize);
+
+    /////add new assignment to the result
+    result.assignment.push({
+      id: id,
+      size: size,
+    });
   };
 
   const preCheckOptionalOrder = (optionalOrder: OptionalOrder): void => {
@@ -135,6 +123,12 @@ export const process = (store: Store, order: Order): false | Result => {
     )!;
     return secondarySize;
   };
+  const deleteOptionalOrderFrom = (array: OptionalOrder[], id: number) => {
+    array.splice(
+      array.findIndex((order) => id === order.id),
+      1
+    );
+  };
 
   try {
     //////sort orders by type
@@ -149,43 +143,176 @@ export const process = (store: Store, order: Order): false | Result => {
       }
     }
 
-    //////////////////////////////////////////////////////////////////////////////////////////////////////
-    ////1. проверить можно ли всем выдать приоритетный размер
-    ////2. если нельзя, то проверить, кому выдать приоритетны размер, а кому секундарный,
-    ////      таким образом, чтобы приоритетных размеров всегда оставалось ноль
+    const clearEndsOfCluster = (cluster: OptionalOrder[]) => {
+      const resetClusterEndings = (start: boolean): OptionalOrder[] => {
+        const clusterPosition = start
+          ? cluster[0]
+          : cluster[cluster.length - 1];
+        const masterSize = start ? "s1" : "s2";
+        return cluster.filter(
+          (order) =>
+            order.size[0] === clusterPosition.size[0] &&
+            order.masterSize === masterSize
+        );
+      };
+      let startEdgeOrders: OptionalOrder[] = resetClusterEndings(true);
+      let endEdgeOrders: OptionalOrder[] = resetClusterEndings(false);
 
-    //A. Посчитать требуемое количество для каждого приоритетного размера
-    // {prioritySize: number, neededQuantity: number}
-    //Б. Посмотреть
-
-    const optionalSizesNeeded: number[][] = optionalOrders.map(
-      (order) => order.size
-    );
-    const prioritySizesNeeded = optionalSizesNeeded.map((e) => e[0]);
-    const secondarySizesNeeded = optionalSizesNeeded.map((e) => e[1]);
-    // console.log(store);
-    // console.log(optionalSizesNeeded);
-
-    //  const conflictOfInterest = [];
-    //  optionalSizesNeeded.forEach(sizeNeeded =>)
-
-    //////////////////////////////////////////////////////////////////////////////////////////////////////
-    for (let optionalOrder of optionalOrders) {
-      const prioritySize = getPrioritySize(optionalOrder);
-      const secondarySize = getSecondarySize(optionalOrder);
-      const masksOfPrioritySize: Masks | undefined =
-        findMaskOfNeededSize(prioritySize);
-      /////if no priority size - look for secondary size
-      if (!masksOfPrioritySize) {
-        result.mismatches++;
-        processAsStrictOrder(optionalOrder.id, secondarySize);
-        break;
+      const processEdgeOrder = (start: boolean) => {
+        for (let edgeOrder of start ? startEdgeOrders : endEdgeOrders) {
+          const id = edgeOrder.id;
+          const size = edgeOrder.size[0];
+          deleteOptionalOrderFrom(cluster, id);
+          start
+            ? (startEdgeOrders = resetClusterEndings(true))
+            : (endEdgeOrders = resetClusterEndings(false));
+          deleteOptionalOrderFrom(optionalOrders, id);
+          processAsStrictOrder(id, size);
+        }
+      };
+      while (startEdgeOrders.length > 0) {
+        processEdgeOrder(true);
       }
-      //// if priority size is available
-      amendResult(masksOfPrioritySize, optionalOrder.id, prioritySize);
+      while (endEdgeOrders.length > 0) {
+        processEdgeOrder(false);
+      }
+    };
+
+    const getHottnessOfSize = (size: number, cluster: OptionalOrder[]) => {
+      const demand: number =
+        cluster.length === 0
+          ? 0
+          : cluster.filter((order) => {
+              return size === getPrioritySize(order);
+            }).length;
+      const supply: number | undefined = store.find(
+        (mask) => mask.size === size
+      )?.size;
+      if (!supply || demand === 0) {
+        return 0;
+      }
+      return demand / supply;
+    };
+    const findHottestSize = (cluster: OptionalOrder[]) => {
+      const sortedByHottness = [...cluster].sort((a, b) => {
+        return (
+          getHottnessOfSize(getPrioritySize(b), cluster) -
+          getHottnessOfSize(getPrioritySize(a), cluster)
+        );
+      });
+      return getPrioritySize(sortedByHottness[0]);
+    };
+    const getSideHottness = (
+      cluster: OptionalOrder[],
+      hottestSize: number,
+      direction: number
+    ) => {
+      return cluster.find(
+        (order) =>
+          order.size[0] === hottestSize + direction ||
+          order.size[1] === hottestSize + direction
+      )
+        ? getHottnessOfSize(hottestSize + direction, cluster)
+        : 0;
+    };
+
+    const clusterizeOptionalOrders = () => {
+      const optionalOrderClusters: OptionalOrder[][] = [];
+      optionalOrders.sort((a, b) => a.size[0] - b.size[0]);
+      for (let optionalOrder of optionalOrders) {
+        if (optionalOrderClusters.length === 0) {
+          optionalOrderClusters.push([optionalOrder]);
+        } else {
+          const lastCluster: OptionalOrder[] =
+            optionalOrderClusters[optionalOrderClusters.length - 1];
+          const gap: boolean =
+            optionalOrder.size[0] -
+              lastCluster[lastCluster.length - 1].size[0] >
+            2;
+          if (gap) {
+            optionalOrderClusters.push([optionalOrder]);
+          } else {
+            lastCluster.push(optionalOrder);
+          }
+        }
+      }
+
+      const checkNeighbour = (
+        neighbourDistance: number,
+        cluster: OptionalOrder[]
+      ) => {
+        const hottestSize = findHottestSize(cluster);
+        const rightHottness = getSideHottness(
+          cluster,
+          hottestSize,
+          neighbourDistance
+        );
+        const leftHottness = getSideHottness(
+          cluster,
+          hottestSize,
+          -neighbourDistance
+        );
+        console.log(hottestSize);
+        console.log(cluster);
+        // console.log(rightHottness);
+        // console.log(leftHottness);
+        const hottestNeighbour = rightHottness - leftHottness;
+
+        const goWithSideOrder = (left: boolean) => {
+          const optionalOrder = left
+            ? cluster.find(
+                (order) =>
+                  order.size[0] === hottestSize - 1 &&
+                  order.size[1] === hottestSize
+              )
+            : cluster.find(
+                (order) =>
+                  order.size[0] === hottestSize &&
+                  order.size[1] === hottestSize + 1
+              );
+          if (!optionalOrder) {
+            left
+              ? () => {
+                  throw Error("left order is undefined");
+                }
+              : goWithSideOrder(true);
+          } else {
+            const id = optionalOrder.id;
+            const size = getPrioritySize(optionalOrder);
+            deleteOptionalOrderFrom(cluster, id);
+            deleteOptionalOrderFrom(optionalOrders, id);
+            processAsStrictOrder(id, size);
+          }
+        };
+
+        if (hottestNeighbour > 0) {
+          goWithSideOrder(false);
+          return;
+        } else if (hottestNeighbour < 0) {
+          goWithSideOrder(true);
+          return;
+        } else {
+          cluster.length / 2 <= neighbourDistance
+            ? goWithSideOrder(true)
+            : checkNeighbour(neighbourDistance + 1, cluster);
+          return;
+        }
+      };
+
+      for (let cluster of optionalOrderClusters) {
+        clearEndsOfCluster(cluster);
+        if (cluster.length === 0) {
+          break;
+        }
+        checkNeighbour(1, cluster);
+      }
+    };
+    while (optionalOrders.length > 0) {
+      clusterizeOptionalOrders();
     }
   } catch (e) {
     if (e === false) {
+      console.log("can't process order");
       return e;
     } else {
       console.error(e);
